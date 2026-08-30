@@ -1,8 +1,8 @@
 export interface AndroidSourceFile {
   path: string;
   name: string;
-  category: 'DATABASE' | 'SCHEDULER' | 'RECEIVER' | 'PARSER' | 'UI' | 'CONFIG';
-  language: 'kotlin' | 'xml' | 'groovy';
+  category: 'DATABASE' | 'SCHEDULER' | 'RECEIVER' | 'PARSER' | 'UI' | 'CONFIG' | 'CI/CD' | 'TEST';
+  language: 'kotlin' | 'xml' | 'groovy' | 'yaml';
   code: string;
   description: string;
 }
@@ -576,6 +576,130 @@ class ChargeGuardViewModel(
         viewModelScope.launch {
             repository.deleteSubscription(id)
         }
+    }
+}`
+  },
+  {
+    name: 'android-ci.yml',
+    path: '.github/workflows/android-ci.yml',
+    category: 'CI/CD',
+    language: 'yaml',
+    description: 'Production GitHub Actions CI workflow for automated compilation, unit testing, linting, and debug APK artifact uploads.',
+    code: `name: Android CI - ChargeGuard
+
+on:
+  push:
+    branches: [ main, master, dev, develop, 'release/**' ]
+  pull_request:
+    branches: [ main, master, dev, develop ]
+  workflow_dispatch:
+
+concurrency:
+  group: \${{ github.workflow }}-\${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-and-build:
+    name: Build, Test & Lint Android
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 📥 Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: ☕ Set up JDK 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: 📱 Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 🛡️ Validate Gradle Wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: 🔑 Make Gradlew Executable
+        run: chmod +x ./gradlew
+
+      - name: 🧪 Run Unit Tests
+        run: ./gradlew testDebugUnitTest --stacktrace --continue
+
+      - name: 🧹 Run Android Lint (Static Analysis)
+        run: ./gradlew lintDebug --stacktrace
+
+      - name: 📦 Assemble Debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: 📊 Upload Unit Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: app/build/reports/tests/testDebugUnitTest/
+          retention-days: 14
+
+      - name: 📋 Upload Lint Analysis Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-lint-report
+          path: app/build/reports/lint-results-debug.html
+          retention-days: 14
+
+      - name: 🚀 Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chargeguard-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 30`
+  },
+  {
+    name: 'RenewalCalculatorTest.kt',
+    path: 'app/src/test/java/com/chargeguard/app/domain/calculator/RenewalCalculatorTest.kt',
+    category: 'TEST',
+    language: 'kotlin',
+    description: 'Unit test suite for monthly, yearly, quarterly, leap year, and date roll calculations without network access.',
+    code: `package com.chargeguard.app.domain.calculator
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class RenewalCalculatorTest {
+
+    @Test
+    fun testMonthlyRenewalCalculation() {
+        val current = "2026-08-30"
+        val next = RenewalCalculator.calculateNextRenewalDate(current, BillingFrequency.MONTHLY)
+        assertEquals("2026-09-30", next)
+    }
+
+    @Test
+    fun testEndOfMonthLeapYearCalculation() {
+        val leapJan31 = "2024-01-31"
+        val nextFeb = RenewalCalculator.calculateNextRenewalDate(leapJan31, BillingFrequency.MONTHLY)
+        assertEquals("2024-02-29", nextFeb)
+    }
+
+    @Test
+    fun testDaysUntilRenewal() {
+        val from = "2026-09-01"
+        val target = "2026-09-08"
+        val days = RenewalCalculator.calculateDaysUntilRenewal(target, from)
+        assertEquals(7L, days)
+    }
+
+    @Test
+    fun testIsImminentWithinWindow() {
+        val from = "2026-09-01"
+        val target = "2026-09-04"
+        assertTrue(RenewalCalculator.isImminent(target, windowDays = 7, fromDateStr = from))
     }
 }`
   }

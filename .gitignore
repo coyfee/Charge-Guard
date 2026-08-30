@@ -1,3 +1,4 @@
+# Node & Web artifacts
 node_modules/
 build/
 dist/
@@ -6,3 +7,34 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Android & Gradle Build Artifacts
+.gradle/
+app/build/
+**/build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Android Studio & IntelliJ Files
+*.iml
+.idea/
+misc.xml
+deploymentTargetDropDown.xml
+render.experimental.xml
+
+# Local Configuration & SDK Location
+local.properties
+
+# Android Keystore, Signing & Private Keys (NEVER COMMIT)
+*.jks
+*.keystore
+*.key
+*.p12
+*.pem
+google-services.json
+service-account*.json
+*.ap_
+*.apk
+*.aab
+

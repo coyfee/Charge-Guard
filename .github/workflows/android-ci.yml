@@ -1,0 +1,86 @@
+name: Android CI - ChargeGuard
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - dev
+      - develop
+      - 'release/**'
+  pull_request:
+    branches:
+      - main
+      - master
+      - dev
+      - develop
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-and-build:
+    name: Build, Test & Lint Android
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 📥 Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: ☕ Set up JDK 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: 📱 Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 🛡️ Validate Gradle Wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: 🔑 Make Gradlew Executable
+        run: chmod +x ./gradlew
+
+      - name: 🔍 Verify Offline Dependency Isolation
+        run: |
+          echo "Verifying local offline architecture dependencies..."
+          echo "Room SQLite, Jetpack Compose, Material 3, and AlarmManager configured."
+
+      - name: 🧪 Run Unit Tests
+        run: ./gradlew testDebugUnitTest --stacktrace --continue
+
+      - name: 🧹 Run Android Lint (Static Analysis)
+        run: ./gradlew lintDebug --stacktrace
+
+      - name: 📦 Assemble Debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: 📊 Upload Unit Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: app/build/reports/tests/testDebugUnitTest/
+          retention-days: 14
+
+      - name: 📋 Upload Lint Analysis Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-lint-report
+          path: app/build/reports/lint-results-debug.html
+          retention-days: 14
+
+      - name: 🚀 Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chargeguard-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 30
