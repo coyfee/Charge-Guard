@@ -353,6 +353,326 @@ class AndroidAlarmScheduler(private val context: Context) : AlarmScheduler {
 }`
   },
   {
+    name: 'ChargeGuardApplication.kt',
+    path: 'app/src/main/java/com/chargeguard/app/ChargeGuardApplication.kt',
+    category: 'CONFIG',
+    language: 'kotlin',
+    description: 'Application class initializing offline Room SQLite database, AndroidAlarmScheduler, and notification channels.',
+    code: `package com.chargeguard.app
+
+import android.app.Application
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
+import android.os.Build
+import com.chargeguard.app.data.local.ChargeGuardDatabase
+import com.chargeguard.app.data.repository.SubscriptionRepository
+import com.chargeguard.app.scheduler.AndroidAlarmScheduler
+
+class ChargeGuardApplication : Application() {
+
+    lateinit var database: ChargeGuardDatabase
+        private set
+
+    lateinit var alarmScheduler: AndroidAlarmScheduler
+        private set
+
+    lateinit var repository: SubscriptionRepository
+        private set
+
+    override fun onCreate() {
+        super.onCreate()
+        instance = this
+
+        // Initialize local SQLite Room database (100% offline)
+        database = ChargeGuardDatabase.getInstance(this)
+
+        // Initialize offline AlarmManager scheduler
+        alarmScheduler = AndroidAlarmScheduler(this)
+
+        // Initialize offline repository
+        repository = SubscriptionRepository(database.subscriptionDao(), database.reminderDao(), alarmScheduler)
+
+        // Create notification channels for subscription renewal warnings
+        createNotificationChannels()
+    }
+
+    private fun createNotificationChannels() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channelName = "Subscription Renewal Warnings"
+            val channelDescription = "Alerts before recurring subscription charges occur (7 days, 3 days, 24h, 1h)"
+            val importance = NotificationManager.IMPORTANCE_HIGH
+            val channel = NotificationChannel(CHANNEL_ID_RENEWALS, channelName, importance).apply {
+                description = channelDescription
+                enableVibration(true)
+            }
+
+            val detectedChannel = NotificationChannel(
+                CHANNEL_ID_DETECTED,
+                "Subscription Signal Detections",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "Notifies when on-device SMS/Notification parser identifies a subscription"
+            }
+
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+            notificationManager.createNotificationChannel(detectedChannel)
+        }
+    }
+
+    companion object {
+        const val CHANNEL_ID_RENEWALS = "chargeguard_renewals_channel"
+        const val CHANNEL_ID_DETECTED = "chargeguard_detected_channel"
+        lateinit var instance: ChargeGuardApplication
+            private set
+    }
+}`
+  },
+  {
+    name: 'MainActivity.kt',
+    path: 'app/src/main/java/com/chargeguard/app/presentation/MainActivity.kt',
+    category: 'UI',
+    language: 'kotlin',
+    description: 'Main activity hosting Jetpack Compose ChargeGuard UI with ViewModel binding.',
+    code: `package com.chargeguard.app.presentation
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.viewModels
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Modifier
+import com.chargeguard.app.ChargeGuardApplication
+import com.chargeguard.app.presentation.ui.ChargeGuardApp
+
+class MainActivity : ComponentActivity() {
+
+    private val viewModel: ChargeGuardViewModel by viewModels {
+        ChargeGuardViewModel.Factory(ChargeGuardApplication.instance.repository)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            MaterialTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    ChargeGuardApp(viewModel = viewModel)
+                }
+            }
+        }
+    }
+}`
+  },
+  {
+    name: 'TimezoneReceiver.kt',
+    path: 'app/src/main/java/com/chargeguard/app/receiver/TimezoneReceiver.kt',
+    category: 'RECEIVER',
+    language: 'kotlin',
+    description: 'Reschedules pending alarms when device timezone, time, or date changes to avoid missed warnings.',
+    code: `package com.chargeguard.app.receiver
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import com.chargeguard.app.data.local.ChargeGuardDatabase
+import com.chargeguard.app.scheduler.AndroidAlarmScheduler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+
+class TimezoneReceiver : BroadcastReceiver() {
+
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_TIMEZONE_CHANGED ||
+            intent.action == Intent.ACTION_TIME_CHANGED ||
+            intent.action == Intent.ACTION_DATE_CHANGED
+        ) {
+            val pendingResult = goAsync()
+            val database = ChargeGuardDatabase.getInstance(context)
+            val scheduler = AndroidAlarmScheduler(context)
+
+            // Reschedule pending alarms with new device timezone offsets
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val now = System.currentTimeMillis()
+                    val activeReminders = database.reminderDao().getPendingReminders(now)
+                    scheduler.rescheduleAll(activeReminders)
+                } finally {
+                    pendingResult.finish()
+                }
+            }
+        }
+    }
+}`
+  },
+  {
+    name: 'ChargeGuardNotificationListenerService.kt',
+    path: 'app/src/main/java/com/chargeguard/app/service/ChargeGuardNotificationListenerService.kt',
+    category: 'RECEIVER',
+    language: 'kotlin',
+    description: 'On-device notification listener parsing SMS and payment notifications for recurring charges without internet.',
+    code: `package com.chargeguard.app.service
+
+import android.app.Notification
+import android.service.notification.NotificationListenerService
+import android.service.notification.StatusBarNotification
+import androidx.core.app.NotificationCompat
+import com.chargeguard.app.ChargeGuardApplication
+import com.chargeguard.app.data.local.entity.BillingFrequency
+import com.chargeguard.app.data.local.entity.DetectionSource
+import com.chargeguard.app.data.local.entity.SubscriptionEntity
+import com.chargeguard.app.data.local.entity.SubscriptionStatus
+import com.chargeguard.app.domain.parser.LocalSignalParser
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.util.UUID
+
+class ChargeGuardNotificationListenerService : NotificationListenerService() {
+
+    private val serviceScope = CoroutineScope(Dispatchers.IO)
+
+    override fun onNotificationPosted(sbn: StatusBarNotification?) {
+        super.onNotificationPosted(sbn)
+        if (sbn == null) return
+
+        val extras = sbn.notification.extras ?: return
+        val title = extras.getString(Notification.EXTRA_TITLE) ?: ""
+        val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
+        val bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString() ?: ""
+
+        val combinedContent = "$title $text $bigText".trim()
+        if (combinedContent.isBlank()) return
+
+        // On-device privacy-preserving regex signal parser
+        val parsed = LocalSignalParser.parse(combinedContent)
+        if (!parsed.isIgnored && parsed.confidenceScore >= 50 && parsed.amount > 0) {
+            handleDetectedSignal(parsed, combinedContent)
+        }
+    }
+
+    private fun handleDetectedSignal(
+        parsed: com.chargeguard.app.domain.parser.ParsedSignal,
+        rawContent: String
+    ) {
+        serviceScope.launch {
+            try {
+                val repository = ChargeGuardApplication.instance.repository
+                val database = ChargeGuardApplication.instance.database
+
+                val existing = database.subscriptionDao().findByMerchant(parsed.merchantName)
+                if (existing == null) {
+                    val newSub = SubscriptionEntity(
+                        id = UUID.randomUUID().toString(),
+                        merchantName = parsed.merchantName,
+                        displayName = parsed.normalizedName,
+                        category = "Digital Services",
+                        amount = parsed.amount,
+                        currency = parsed.currency,
+                        billingFrequency = BillingFrequency.MONTHLY,
+                        nextRenewalDate = parsed.renewalDateIso.ifEmpty { "2026-09-15" },
+                        status = if (parsed.eventType == "TRIAL_END") SubscriptionStatus.TRIAL else SubscriptionStatus.CONFIRMED,
+                        source = DetectionSource.NOTIFICATION,
+                        confidence = parsed.confidenceScore,
+                        isTrial = parsed.eventType == "TRIAL_END",
+                        notes = "Auto-detected locally from notification: \${rawContent.take(120)}"
+                    )
+                    repository.insertAndSchedule(newSub)
+
+                    // Post a local notification informing user that protection is active
+                    val notificationManager = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
+                    val notify = NotificationCompat.Builder(this@ChargeGuardNotificationListenerService, ChargeGuardApplication.CHANNEL_ID_DETECTED)
+                        .setSmallIcon(android.R.drawable.ic_dialog_info)
+                        .setContentTitle("ChargeGuard Detected: \${parsed.normalizedName}")
+                        .setContentText("Auto-scheduled renewal alarms for \${parsed.currency} \${parsed.amount} (Confidence: \${parsed.confidenceScore}%)")
+                        .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                        .setAutoCancel(true)
+                        .build()
+                    notificationManager.notify(newSub.id.hashCode(), notify)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+}`
+  },
+  {
+    name: 'AlarmReceiver.kt',
+    path: 'app/src/main/java/com/chargeguard/app/receiver/AlarmReceiver.kt',
+    category: 'RECEIVER',
+    language: 'kotlin',
+    description: 'Broadcast receiver triggered by AlarmManager exact alarms to show urgent renewal notifications.',
+    code: `package com.chargeguard.app.receiver
+
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import androidx.core.app.NotificationCompat
+import com.chargeguard.app.ChargeGuardApplication
+import com.chargeguard.app.presentation.MainActivity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+
+class AlarmReceiver : BroadcastReceiver() {
+
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == "com.chargeguard.app.ACTION_TRIGGER_REMINDER") {
+            val reminderId = intent.getStringExtra("EXTRA_REMINDER_ID") ?: return
+            val merchant = intent.getStringExtra("EXTRA_MERCHANT") ?: "Subscription"
+            val title = intent.getStringExtra("EXTRA_TITLE") ?: "Subscription Reminder"
+            val body = intent.getStringExtra("EXTRA_BODY") ?: "Upcoming subscription charge detected."
+            val amount = intent.getDoubleExtra("EXTRA_AMOUNT", 0.0)
+            val currency = intent.getStringExtra("EXTRA_CURRENCY") ?: "PHP"
+
+            // Build full screen notification with intent to open app
+            val contentIntent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            val pendingContentIntent = PendingIntent.getActivity(
+                context,
+                reminderId.hashCode(),
+                contentIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val notification = NotificationCompat.Builder(context, ChargeGuardApplication.CHANNEL_ID_RENEWALS)
+                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setContentIntent(pendingContentIntent)
+                .setAutoCancel(true)
+                .build()
+
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.notify(reminderId.hashCode(), notification)
+
+            // Mark delivered in local database
+            val pendingResult = goAsync()
+            val database = ChargeGuardApplication.instance.database
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    database.reminderDao().markDelivered(reminderId)
+                } finally {
+                    pendingResult.finish()
+                }
+            }
+        }
+    }
+}`
+  },
+  {
     name: 'BootReceiver.kt',
     path: 'app/src/main/java/com/chargeguard/app/receiver/BootReceiver.kt',
     category: 'RECEIVER',
