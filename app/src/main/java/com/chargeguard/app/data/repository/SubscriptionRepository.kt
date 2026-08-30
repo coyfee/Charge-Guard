@@ -21,7 +21,7 @@ class SubscriptionRepository(
 
     fun getAllRemindersFlow(): Flow<List<ReminderEntity>> = reminderDao.getAllRemindersFlow()
 
-    suspend fun getSubscriptionById(id: String): SubscriptionEntity? = subscriptionDao.getById(id)
+    suspend fun getSubscriptionById(id: String): SubscriptionEntity? = subscriptionDao.getSubscriptionById(id)
 
     suspend fun insertAndSchedule(subscription: SubscriptionEntity) {
         subscriptionDao.insertSubscription(subscription)
@@ -44,7 +44,7 @@ class SubscriptionRepository(
 
     suspend fun dismissReminder(reminderId: String) {
         alarmScheduler.cancel(reminderId)
-        reminderDao.dismissReminder(reminderId)
+        reminderDao.markDismissed(reminderId)
     }
 
     suspend fun testTriggerReminder(reminder: ReminderEntity) {
@@ -139,7 +139,7 @@ class SubscriptionRepository(
                     id = UUID.randomUUID().toString(),
                     subscriptionId = subscription.id,
                     triggerTimeEpochMillis = sameDayEpoch,
-                    reminderType = ReminderType.SAME_DAY,
+                    reminderType = ReminderType.DAY_OF,
                     title = "Today: ${subscription.displayName} Charges",
                     body = "Payment of ${subscription.currency} ${subscription.amount} for ${subscription.displayName} is scheduled for today.",
                     amount = subscription.amount,
