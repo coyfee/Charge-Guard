@@ -21,8 +21,15 @@ class SubscriptionRepository(
 
     fun getAllRemindersFlow(): Flow<List<ReminderEntity>> = reminderDao.getAllRemindersFlow()
 
+    suspend fun getSubscriptionById(id: String): SubscriptionEntity? = subscriptionDao.getById(id)
+
     suspend fun insertAndSchedule(subscription: SubscriptionEntity) {
         subscriptionDao.insertSubscription(subscription)
+        generateAndScheduleReminders(subscription)
+    }
+
+    suspend fun updateAndReschedule(subscription: SubscriptionEntity) {
+        subscriptionDao.updateSubscription(subscription)
         generateAndScheduleReminders(subscription)
     }
 
@@ -33,6 +40,15 @@ class SubscriptionRepository(
         }
         reminderDao.deleteForSubscription(subscriptionId)
         subscriptionDao.deleteById(subscriptionId)
+    }
+
+    suspend fun dismissReminder(reminderId: String) {
+        alarmScheduler.cancel(reminderId)
+        reminderDao.dismissReminder(reminderId)
+    }
+
+    suspend fun testTriggerReminder(reminder: ReminderEntity) {
+        alarmScheduler.triggerImmediately(reminder)
     }
 
     suspend fun rescheduleAllAlarms() {
@@ -49,7 +65,7 @@ class SubscriptionRepository(
 
         val remindersToCreate = mutableListOf<ReminderEntity>()
 
-        // 7 days before
+        // 1. 7 days before
         val sevenDaysEpoch = ReminderTimeCalculator.calculateTriggerEpochMillis(
             subscription.nextRenewalDate,
             AlertOffset.SEVEN_DAYS
@@ -70,7 +86,7 @@ class SubscriptionRepository(
             )
         }
 
-        // 3 days before
+        // 2. 3 days before
         val threeDaysEpoch = ReminderTimeCalculator.calculateTriggerEpochMillis(
             subscription.nextRenewalDate,
             AlertOffset.THREE_DAYS
@@ -91,7 +107,7 @@ class SubscriptionRepository(
             )
         }
 
-        // 24 hours before
+        // 3. 24 hours before (9:00 AM day before)
         val oneDayEpoch = ReminderTimeCalculator.calculateTriggerEpochMillis(
             subscription.nextRenewalDate,
             AlertOffset.TWENTY_FOUR_HOURS
@@ -112,7 +128,46 @@ class SubscriptionRepository(
             )
         }
 
-        // Save & schedule each alarm
+        // 4. Same Day Morning (8:00 AM on renewal day)
+        val sameDayEpoch = ReminderTimeCalculator.calculateTriggerEpochMillis(
+            subscription.nextRenewalDate,
+            AlertOffset.SAME_DAY_MORNING
+        )
+        if (ReminderTimeCalculator.isSchedulable(sameDayEpoch)) {
+            remindersToCreate.add(
+                ReminderEntity(
+                    id = UUID.randomUUID().toString(),
+                    subscriptionId = subscription.id,
+                    triggerTimeEpochMillis = sameDayEpoch,
+                    reminderType = ReminderType.SAME_DAY,
+                    title = "Today: ${subscription.displayName} Charges",
+                    body = "Payment of ${subscription.currency} ${subscription.amount} for ${subscription.displayName} is scheduled for today.",
+                    amount = subscription.amount,
+                    currency = subscription.currency,
+                    merchantName = subscription.merchantName
+                )
+            )
+        }
+
+        // 5. Imminent Fallback (if renewal is within 24h and scheduled morning alarms have already passed)
+        if (remindersToCreate.isEmpty()) {
+            val urgentEpoch = System.currentTimeMillis() + 60_000L // 1 minute from now
+            remindersToCreate.add(
+                ReminderEntity(
+                    id = UUID.randomUUID().toString(),
+                    subscriptionId = subscription.id,
+                    triggerTimeEpochMillis = urgentEpoch,
+                    reminderType = ReminderType.CUSTOM,
+                    title = "Urgent: ${subscription.displayName} Renews Soon",
+                    body = "${subscription.displayName} renews on ${subscription.nextRenewalDate} (${subscription.currency} ${subscription.amount}). Exact protection active.",
+                    amount = subscription.amount,
+                    currency = subscription.currency,
+                    merchantName = subscription.merchantName
+                )
+            )
+        }
+
+        // Save & schedule each alarm in Android AlarmManager
         if (remindersToCreate.isNotEmpty()) {
             reminderDao.insertReminders(remindersToCreate)
             remindersToCreate.forEach { reminder ->
@@ -121,3 +176,4 @@ class SubscriptionRepository(
         }
     }
 }
+

@@ -12,11 +12,26 @@ interface AlarmScheduler {
     fun schedule(reminder: ReminderEntity)
     fun cancel(reminderId: String)
     fun rescheduleAll(reminders: List<ReminderEntity>)
+    fun triggerImmediately(reminder: ReminderEntity)
 }
 
 class AndroidAlarmScheduler(private val context: Context) : AlarmScheduler {
 
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+
+    override fun triggerImmediately(reminder: ReminderEntity) {
+        val intent = Intent(context, AlarmReceiver::class.java).apply {
+            action = "com.chargeguard.app.ACTION_TRIGGER_REMINDER"
+            putExtra("EXTRA_REMINDER_ID", reminder.id)
+            putExtra("EXTRA_SUBSCRIPTION_ID", reminder.subscriptionId)
+            putExtra("EXTRA_MERCHANT", reminder.merchantName)
+            putExtra("EXTRA_TITLE", reminder.title)
+            putExtra("EXTRA_BODY", reminder.body)
+            putExtra("EXTRA_AMOUNT", reminder.amount)
+            putExtra("EXTRA_CURRENCY", reminder.currency)
+        }
+        context.sendBroadcast(intent)
+    }
 
     override fun schedule(reminder: ReminderEntity) {
         val now = System.currentTimeMillis()

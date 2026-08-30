@@ -28,7 +28,8 @@ interface SettingsScreenProps {
   onOpenAndroidCode: () => void;
   onSimulateReboot: () => void;
   onSimulateTimezone: () => void;
-  onResetData: () => void;
+  onClearData: () => void;
+  onLoadSampleData: () => void;
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
@@ -38,7 +39,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onOpenAndroidCode,
   onSimulateReboot,
   onSimulateTimezone,
-  onResetData
+  onClearData,
+  onLoadSampleData
 }) => {
   const [showHealthDiagnostics, setShowHealthDiagnostics] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
@@ -244,17 +246,31 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </div>
         )}
 
-        <button
-          onClick={() => {
-            if (confirm('Reset ChargeGuard local database to clean initial state?')) {
-              onResetData();
-            }
-          }}
-          className="w-full py-2.5 px-3 rounded-xl bg-red-950/30 hover:bg-red-950/50 border border-red-800/40 text-red-400 text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
-        >
-          <Trash2 size={14} />
-          <span>Reset / Restore Demo Database</span>
-        </button>
+        <div className="space-y-2 pt-1">
+          <button
+            onClick={() => {
+              if (confirm('Clear all subscriptions, alerts, and billing history to empty state?')) {
+                onClearData();
+              }
+            }}
+            className="w-full py-2.5 px-3 rounded-xl bg-red-950/30 hover:bg-red-950/50 border border-red-800/40 text-red-400 text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
+          >
+            <Trash2 size={14} />
+            <span>Clear All Data (Empty State)</span>
+          </button>
+
+          <button
+            onClick={() => {
+              if (confirm('Load sample subscription data for signal & alarm simulation?')) {
+                onLoadSampleData();
+              }
+            }}
+            className="w-full py-2.5 px-3 rounded-xl bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-300 text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
+          >
+            <RotateCcw size={14} />
+            <span>Load Sample Subscriptions</span>
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -6,11 +6,12 @@ import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-enum class AlertOffset(val daysBefore: Long, val hourOfDay: Int) {
-    SEVEN_DAYS(7, 9),        // 7 days before at 9:00 AM
-    THREE_DAYS(3, 9),        // 3 days before at 9:00 AM
-    TWENTY_FOUR_HOURS(1, 9), // 1 day before at 9:00 AM
-    SAME_DAY_MORNING(0, 8)   // Day of charge at 8:00 AM
+enum class AlertOffset(val daysBefore: Long, val hourOfDay: Int, val label: String) {
+    SEVEN_DAYS(7, 9, "7 Days Before"),
+    THREE_DAYS(3, 9, "3 Days Before"),
+    TWENTY_FOUR_HOURS(1, 9, "24 Hours Before"),
+    SAME_DAY_MORNING(0, 8, "Same Day (8:00 AM)"),
+    IMMEDIATE_UPCOMING(0, -1, "Upcoming Warning")
 }
 
 object ReminderTimeCalculator {
@@ -26,7 +27,13 @@ object ReminderTimeCalculator {
     ): Long {
         val date = LocalDate.parse(renewalDateIso, DATE_FORMATTER)
         val targetDate = date.minusDays(offset.daysBefore)
-        val triggerDateTime = LocalDateTime.of(targetDate, LocalTime.of(offset.hourOfDay, 0))
+        
+        val triggerDateTime = if (offset.hourOfDay >= 0) {
+            LocalDateTime.of(targetDate, LocalTime.of(offset.hourOfDay, 0))
+        } else {
+            // For immediate/urgent offsets when renewal is within hours
+            LocalDateTime.now(zoneId).plusMinutes(2)
+        }
         return triggerDateTime.atZone(zoneId).toInstant().toEpochMilli()
     }
 
@@ -37,3 +44,4 @@ object ReminderTimeCalculator {
         return triggerEpochMillis > nowEpochMillis
     }
 }
+

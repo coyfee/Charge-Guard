@@ -8,12 +8,20 @@ import {
 import { generateRemindersForSubscription } from '../services/reminderScheduler';
 
 const STORAGE_KEYS = {
-  SUBSCRIPTIONS: 'chargeguard_subscriptions_v1',
-  REMINDERS: 'chargeguard_reminders_v1',
-  RENEWAL_EVENTS: 'chargeguard_renewal_events_v1',
-  SETTINGS: 'chargeguard_settings_v1',
-  LOGS: 'chargeguard_audit_logs_v1'
+  SUBSCRIPTIONS: 'chargeguard_subscriptions_v2',
+  REMINDERS: 'chargeguard_reminders_v2',
+  RENEWAL_EVENTS: 'chargeguard_renewal_events_v2',
+  SETTINGS: 'chargeguard_settings_v2',
+  LOGS: 'chargeguard_audit_logs_v2'
 };
+
+const LEGACY_STORAGE_KEYS = [
+  'chargeguard_subscriptions_v1',
+  'chargeguard_reminders_v1',
+  'chargeguard_renewal_events_v1',
+  'chargeguard_settings_v1',
+  'chargeguard_audit_logs_v1'
+];
 
 const DEFAULT_SETTINGS: UserSettings = {
   hasCompletedOnboarding: false,
@@ -316,6 +324,15 @@ class LocalDatabase {
     if (typeof window === 'undefined') return;
 
     try {
+      // Clean up legacy v1 demo keys if present in browser
+      LEGACY_STORAGE_KEYS.forEach(key => {
+        try {
+          localStorage.removeItem(key);
+        } catch {
+          // ignore
+        }
+      });
+
       const storedSubs = localStorage.getItem(STORAGE_KEYS.SUBSCRIPTIONS);
       const storedReminders = localStorage.getItem(STORAGE_KEYS.REMINDERS);
       const storedEvents = localStorage.getItem(STORAGE_KEYS.RENEWAL_EVENTS);
@@ -324,14 +341,14 @@ class LocalDatabase {
       if (storedSubs) {
         this.subscriptions = JSON.parse(storedSubs);
       } else {
-        this.subscriptions = [...INITIAL_SUBSCRIPTIONS];
+        this.subscriptions = [];
         this.saveSubscriptions();
       }
 
       if (storedEvents) {
         this.renewalEvents = JSON.parse(storedEvents);
       } else {
-        this.renewalEvents = [...INITIAL_RENEWAL_EVENTS];
+        this.renewalEvents = [];
         this.saveRenewalEvents();
       }
 
@@ -345,17 +362,17 @@ class LocalDatabase {
       if (storedReminders) {
         this.reminders = JSON.parse(storedReminders);
       } else {
-        // Generate initial reminders for all subscriptions
-        this.rescheduleAllReminders();
+        this.reminders = [];
+        this.saveReminders();
       }
 
       this.isInitialized = true;
     } catch (e) {
       console.error('ChargeGuard Room SQLite init failed, using in-memory fallbacks', e);
-      this.subscriptions = [...INITIAL_SUBSCRIPTIONS];
-      this.renewalEvents = [...INITIAL_RENEWAL_EVENTS];
+      this.subscriptions = [];
+      this.renewalEvents = [];
+      this.reminders = [];
       this.settings = { ...DEFAULT_SETTINGS };
-      this.rescheduleAllReminders();
     }
   }
 
@@ -555,7 +572,22 @@ class LocalDatabase {
     }
   }
 
+  public clearAllData(): void {
+    this.subscriptions = [];
+    this.renewalEvents = [];
+    this.reminders = [];
+    this.settings = { ...DEFAULT_SETTINGS, hasCompletedOnboarding: true };
+    this.saveSubscriptions();
+    this.saveRenewalEvents();
+    this.saveReminders();
+    this.saveSettings();
+  }
+
   public resetAllData(): void {
+    this.clearAllData();
+  }
+
+  public loadSampleData(): void {
     this.subscriptions = [...INITIAL_SUBSCRIPTIONS];
     this.renewalEvents = [...INITIAL_RENEWAL_EVENTS];
     this.settings = { ...DEFAULT_SETTINGS, hasCompletedOnboarding: true };

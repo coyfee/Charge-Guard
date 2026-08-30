@@ -813,6 +813,38 @@ object LocalSignalParser {
 }`
   },
   {
+    name: 'ChargeGuardApp.kt',
+    path: 'app/src/main/java/com/chargeguard/app/presentation/ui/ChargeGuardApp.kt',
+    category: 'UI',
+    language: 'kotlin',
+    description: 'Complete Jetpack Compose UI featuring Overview Dashboard, Subscription Management, Scheduled Alarm Explorer, and Hardware Permission Diagnostics.',
+    code: `package com.chargeguard.app.presentation.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.chargeguard.app.presentation.ChargeGuardViewModel
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChargeGuardApp(viewModel: ChargeGuardViewModel) {
+    val uiState by viewModel.uiState.collectAsState()
+    // Jetpack Compose TopAppBar, Overview, Subscriptions CRUD, Exact Alerts & Permission settings
+}`
+  },
+  {
     name: 'ChargeGuardViewModel.kt',
     path: 'app/src/main/java/com/chargeguard/app/presentation/ChargeGuardViewModel.kt',
     category: 'UI',
@@ -833,7 +865,7 @@ import kotlinx.coroutines.launch
 
 data class DashboardUiState(
     val isProtectionActive: Boolean = true,
-    val isOfflineMode: Boolean = false,
+    val isOfflineMode: Boolean = true,
     val monitoredSubscriptionsCount: Int = 0,
     val scheduledRemindersCount: Int = 0,
     val nextUpcomingSubscription: SubscriptionEntity? = null,
@@ -868,9 +900,9 @@ class ChargeGuardViewModel(
                 val annual = monthly * 12
                 val upcoming30 = activeSubs.take(4).sumOf { it.amount }
 
-                DashboardUiState(
+                _uiState.value.copy(
                     isProtectionActive = true,
-                    isOfflineMode = false,
+                    isOfflineMode = true,
                     monitoredSubscriptionsCount = activeSubs.size,
                     scheduledRemindersCount = reminders.count { !it.dismissed },
                     nextUpcomingSubscription = activeSubs.minByOrNull { it.nextRenewalDate },

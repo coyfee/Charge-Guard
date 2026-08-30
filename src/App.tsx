@@ -171,14 +171,26 @@ export default function App() {
     });
   };
 
-  // Reset Demo Database
-  const handleResetData = () => {
-    localDb.resetAllData();
+  // Clear All Data
+  const handleClearData = () => {
+    localDb.clearAllData();
     refreshState();
     setActiveToast({
-      id: `toast_reset_${Date.now()}`,
-      title: '✓ Database Reset',
-      body: 'ChargeGuard local SQLite database restored to initial clean state.',
+      id: `toast_clear_${Date.now()}`,
+      title: '✓ Database Cleared',
+      body: 'All subscriptions and alarms cleared. Operating in clean first-launch state.',
+      timestamp: new Date().toISOString()
+    });
+  };
+
+  // Load Sample Data
+  const handleLoadSampleData = () => {
+    localDb.loadSampleData();
+    refreshState();
+    setActiveToast({
+      id: `toast_sample_${Date.now()}`,
+      title: '✓ Sample Data Loaded',
+      body: 'Sample subscriptions loaded for testing signals, price changes, and offline alarms.',
       timestamp: new Date().toISOString()
     });
   };
@@ -219,6 +231,10 @@ export default function App() {
               onNavigateTab={(tab) => setCurrentTab(tab)}
               onTriggerTestAlarm={handleTriggerTestAlarm}
               onOpenSignalDetector={() => setIsDetectorOpen(true)}
+              onOpenAddModal={() => {
+                setEditingSubscription(undefined);
+                setIsAddModalOpen(true);
+              }}
             />
           )}
 
@@ -258,7 +274,8 @@ export default function App() {
               onOpenAndroidCode={() => setIsAndroidCodeOpen(true)}
               onSimulateReboot={handleSimulateReboot}
               onSimulateTimezone={handleSimulateTimezone}
-              onResetData={handleResetData}
+              onClearData={handleClearData}
+              onLoadSampleData={handleLoadSampleData}
             />
           )}
         </main>

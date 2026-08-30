@@ -23,6 +23,7 @@ interface HomeDashboardProps {
   onNavigateTab: (tab: 'SUBSCRIPTIONS' | 'CALENDAR' | 'INSIGHTS' | 'SETTINGS') => void;
   onTriggerTestAlarm: (sub: Subscription) => void;
   onOpenSignalDetector: () => void;
+  onOpenAddModal?: () => void;
 }
 
 export const HomeDashboard: React.FC<HomeDashboardProps> = ({
@@ -32,7 +33,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   onSelectSubscription,
   onNavigateTab,
   onTriggerTestAlarm,
-  onOpenSignalDetector
+  onOpenSignalDetector,
+  onOpenAddModal
 }) => {
   // Sort active upcoming subscriptions by next renewal date
   const activeSubs = subscriptions.filter(s => s.status !== 'CANCELLED');
@@ -238,55 +240,75 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           </button>
         </div>
 
-        <div className="space-y-2">
-          {sortedUpcoming.slice(0, 5).map((sub) => {
-            const isTomorrow = sub.nextRenewalDate === new Date(Date.now() + 86400000).toISOString().split('T')[0];
-            const isToday = sub.nextRenewalDate === new Date().toISOString().split('T')[0];
+        {sortedUpcoming.length === 0 ? (
+          <div className="text-center py-10 px-4 rounded-2xl bg-slate-900/40 border border-slate-800 space-y-3">
+            <div className="w-12 h-12 rounded-xl bg-slate-800 flex items-center justify-center mx-auto text-slate-400">
+              <CreditCard size={24} />
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-sm font-semibold text-white">No subscriptions tracked yet</h4>
+              <p className="text-xs text-slate-400 max-w-xs mx-auto">
+                Add your first subscription to activate 100% offline protection and schedule exact hardware renewal alarms.
+              </p>
+            </div>
+            <button
+              onClick={() => onOpenAddModal ? onOpenAddModal() : onNavigateTab('SUBSCRIPTIONS')}
+              className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs inline-flex items-center gap-1.5 transition-all shadow-md shadow-emerald-500/20"
+            >
+              Add Subscription
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {sortedUpcoming.slice(0, 5).map((sub) => {
+              const isTomorrow = sub.nextRenewalDate === new Date(Date.now() + 86400000).toISOString().split('T')[0];
+              const isToday = sub.nextRenewalDate === new Date().toISOString().split('T')[0];
 
-            return (
-              <div
-                key={sub.id}
-                onClick={() => onSelectSubscription(sub)}
-                className="p-3 rounded-xl bg-slate-900/70 hover:bg-slate-900 border border-slate-800/80 hover:border-slate-700 transition-all cursor-pointer flex items-center justify-between"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-slate-800/90 border border-slate-700/80 flex items-center justify-center text-slate-200 font-bold text-sm">
-                    {sub.displayName.slice(0, 2).toUpperCase()}
+              return (
+                <div
+                  key={sub.id}
+                  onClick={() => onSelectSubscription(sub)}
+                  className="p-3 rounded-xl bg-slate-900/70 hover:bg-slate-900 border border-slate-800/80 hover:border-slate-700 transition-all cursor-pointer flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-slate-800/90 border border-slate-700/80 flex items-center justify-center text-slate-200 font-bold text-sm">
+                      {sub.displayName.slice(0, 2).toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-semibold text-white">{sub.displayName}</h4>
+                        {sub.isPrediction && (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                            Predicted
+                          </span>
+                        )}
+                        {sub.isTrial && (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                            Trial
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">
+                        <span>{isToday ? 'Today' : isTomorrow ? 'Tomorrow' : formatHumanDate(sub.nextRenewalDate)}</span>
+                        <span>•</span>
+                        <span className="text-slate-400 capitalize">{sub.category.toLowerCase().replace('_', ' ')}</span>
+                        <span>•</span>
+                        <span className="text-slate-500 text-[11px]">{sub.confidence}% conf</span>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-semibold text-white">{sub.displayName}</h4>
-                      {sub.isPrediction && (
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                          Predicted
-                        </span>
-                      )}
-                      {sub.isTrial && (
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                          Trial
-                        </span>
-                      )}
+
+                  <div className="text-right">
+                    <div className="text-sm font-extrabold text-white">
+                      {formatCurrency(sub.amount, sub.currency)}
                     </div>
-                    <div className="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">
-                      <span>{isToday ? 'Today' : isTomorrow ? 'Tomorrow' : formatHumanDate(sub.nextRenewalDate)}</span>
-                      <span>•</span>
-                      <span className="text-slate-400 capitalize">{sub.category.toLowerCase().replace('_', ' ')}</span>
-                      <span>•</span>
-                      <span className="text-slate-500 text-[11px]">{sub.confidence}% conf</span>
-                    </div>
+                    <span className="text-[10px] text-slate-400">/{sub.billingFrequency.toLowerCase().slice(0, 2)}</span>
                   </div>
                 </div>
-
-                <div className="text-right">
-                  <div className="text-sm font-extrabold text-white">
-                    {formatCurrency(sub.amount, sub.currency)}
-                  </div>
-                  <span className="text-[10px] text-slate-400">/{sub.billingFrequency.toLowerCase().slice(0, 2)}</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

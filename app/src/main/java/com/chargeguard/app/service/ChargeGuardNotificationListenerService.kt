@@ -13,6 +13,8 @@ import com.chargeguard.app.domain.parser.LocalSignalParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 class ChargeGuardNotificationListenerService : NotificationListenerService() {
@@ -23,12 +25,16 @@ class ChargeGuardNotificationListenerService : NotificationListenerService() {
         super.onNotificationPosted(sbn)
         if (sbn == null) return
 
+        // Skip ChargeGuard's own notifications to avoid recursion
+        if (sbn.packageName == packageName) return
+
         val extras = sbn.notification.extras ?: return
         val title = extras.getString(Notification.EXTRA_TITLE) ?: ""
         val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
         val bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString() ?: ""
+        val subText = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString() ?: ""
 
-        val combinedContent = "$title $text $bigText".trim()
+        val combinedContent = "$title $text $bigText $subText".trim()
         if (combinedContent.isBlank()) return
 
         // On-device privacy-preserving regex signal parser
@@ -48,21 +54,39 @@ class ChargeGuardNotificationListenerService : NotificationListenerService() {
                 val database = ChargeGuardApplication.instance.database
 
                 val existing = database.subscriptionDao().findByMerchant(parsed.merchantName)
-                if (existing == null) {
+                    ?: database.subscriptionDao().findByMerchant(parsed.normalizedName)
+
+                if (existing != null) {
+                    // Update existing subscription to avoid duplicate entries
+                    val updated = existing.copy(
+                        amount = parsed.amount,
+                        currency = parsed.currency,
+                        nextRenewalDate = parsed.renewalDateIso.ifEmpty { existing.nextRenewalDate },
+                        confidence = maxOf(existing.confidence, parsed.confidenceScore),
+                        notes = "Updated via on-device notification signal."
+                    )
+                    repository.updateAndReschedule(updated)
+                } else {
+                    val defaultRenewal = try {
+                        LocalDate.now().plusMonths(1).format(DateTimeFormatter.ISO_LOCAL_DATE)
+                    } catch (e: Exception) {
+                        "2026-09-30"
+                    }
+
                     val newSub = SubscriptionEntity(
                         id = UUID.randomUUID().toString(),
                         merchantName = parsed.merchantName,
                         displayName = parsed.normalizedName,
-                        category = "Digital Services",
+                        category = detectCategory(parsed.normalizedName),
                         amount = parsed.amount,
                         currency = parsed.currency,
                         billingFrequency = BillingFrequency.MONTHLY,
-                        nextRenewalDate = parsed.renewalDateIso.ifEmpty { "2026-09-15" },
+                        nextRenewalDate = parsed.renewalDateIso.ifEmpty { defaultRenewal },
                         status = if (parsed.eventType == "TRIAL_END") SubscriptionStatus.TRIAL else SubscriptionStatus.CONFIRMED,
                         source = DetectionSource.NOTIFICATION,
                         confidence = parsed.confidenceScore,
                         isTrial = parsed.eventType == "TRIAL_END",
-                        notes = "Auto-detected locally from notification: ${rawContent.take(120)}"
+                        notes = "Auto-detected locally from notification: ${rawContent.take(100)}"
                     )
                     repository.insertAndSchedule(newSub)
 
@@ -70,8 +94,9 @@ class ChargeGuardNotificationListenerService : NotificationListenerService() {
                     val notificationManager = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
                     val notify = NotificationCompat.Builder(this@ChargeGuardNotificationListenerService, ChargeGuardApplication.CHANNEL_ID_DETECTED)
                         .setSmallIcon(android.R.drawable.ic_dialog_info)
-                        .setContentTitle("ChargeGuard Detected: ${parsed.normalizedName}")
-                        .setContentText("Auto-scheduled renewal alarms for ${parsed.currency} ${parsed.amount} (Confidence: ${parsed.confidenceScore}%)")
+                        .setContentTitle("ChargeGuard: ${parsed.normalizedName} Detected")
+                        .setContentText("Scheduled renewal protection for ${parsed.currency} ${String.format("%.2f", parsed.amount)} (Confidence: ${parsed.confidenceScore}%)")
+                        .setStyle(NotificationCompat.BigTextStyle().bigText("Identified recurring subscription signal from ${parsed.normalizedName}. Offline exact alarms are scheduled."))
                         .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                         .setAutoCancel(true)
                         .build()
@@ -82,4 +107,16 @@ class ChargeGuardNotificationListenerService : NotificationListenerService() {
             }
         }
     }
+
+    private fun detectCategory(name: String): String {
+        val lower = name.lowercase()
+        return when {
+            lower.contains("netflix") || lower.contains("spotify") || lower.contains("youtube") || lower.contains("disney") || lower.contains("hbo") || lower.contains("apple music") -> "Entertainment"
+            lower.contains("chatgpt") || lower.contains("claude") || lower.contains("cursor") || lower.contains("openai") || lower.contains("midjourney") || lower.contains("github") -> "AI & Developer"
+            lower.contains("google") || lower.contains("icloud") || lower.contains("dropbox") || lower.contains("drive") -> "Cloud Storage"
+            lower.contains("canva") || lower.contains("adobe") || lower.contains("figma") || lower.contains("notion") -> "Productivity"
+            else -> "Digital Services"
+        }
+    }
 }
+
