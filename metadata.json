@@ -1,0 +1,6 @@
+{
+  "name": "ChargeGuard",
+  "description": "Offline-first native subscription early-warning protection system with local Room SQLite storage, predictive renewal alerts, and device alarm scheduling.",
+  "requestFramePermissions": ["notifications"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
