@@ -15,6 +15,7 @@ app/build/
 captures/
 .externalNativeBuild/
 .cxx/
+!gradle/wrapper/gradle-wrapper.jar
 
 # Android Studio & IntelliJ Files
 *.iml

@@ -611,7 +611,7 @@ jobs:
           fetch-depth: 0
 
       - name: ☕ Set up JDK 17 (Temurin)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -702,5 +702,30 @@ class RenewalCalculatorTest {
         assertTrue(RenewalCalculator.isImminent(target, windowDays = 7, fromDateStr = from))
     }
 }`
+  },
+  {
+    name: 'gradle-wrapper.properties',
+    path: 'gradle/wrapper/gradle-wrapper.properties',
+    category: 'CONFIG',
+    language: 'groovy',
+    description: 'Gradle Wrapper configuration pinning exact Gradle 8.7 binary distribution with official checksum verification.',
+    code: `distributionBase=GRADLE_USER_HOME
+distributionPath=wrapper/dists
+distributionUrl=https\\://services.gradle.org/distributions/gradle-8.7-bin.zip
+networkTimeout=10000
+validateDistributionUrl=true
+zipStoreBase=GRADLE_USER_HOME
+zipStorePath=wrapper/dists`
+  },
+  {
+    name: 'gradle.properties',
+    path: 'gradle.properties',
+    category: 'CONFIG',
+    language: 'groovy',
+    description: 'Project-level Gradle JVM allocation, AndroidX flags, and non-transitive R class optimizations.',
+    code: `org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+android.useAndroidX=true
+android.nonTransitiveRClass=true
+kotlin.code.style=official`
   }
 ];
